@@ -1,15 +1,33 @@
 <?php
-/**
- * Created by PhpStorm.
- * User: 764432054@qq.com
- * Date: 2019/10/7
- * Time: 23:25
- */
 
-use Workerman\Worker;
-require_once   './../Workerman/Autoloader.php';
+$local_socket="tcp://0.0.0.0:8081";
+$flags=STREAM_SERVER_BIND | STREAM_SERVER_LISTEN;
+$context_option=[];
+$context_option['socket']['backlog'] = 5;
 
-for($i=0;$i<20;$i++){
-    Worker::safeEcho($i);
+$context = \stream_context_create($context_option);
+
+//7.1.0加上了tcp_nodelay选项，我这是7.3.4
+stream_context_set_option($context, 'socket', 'tcp_nodelay', true);
+
+$mainSocket = \stream_socket_server($local_socket, $errno, $errmsg, $flags, $context);
+if (!$mainSocket) {
+    throw new Exception($errmsg);
 }
+
+
+$socket = \socket_import_stream($mainSocket);
+socket_set_option($socket, SOL_SOCKET, SO_KEEPALIVE, 1);
+//socket_set_option($socket, SOL_TCP, TCP_NODELAY, 1);
+
+
+
+
+echo "tcp_nodelay:".print_r(socket_get_option($socket,SOL_TCP,TCP_NODELAY),true).PHP_EOL;
+
+print_r(stream_context_get_options($mainSocket));
+echo PHP_EOL;
+
+
+
 
