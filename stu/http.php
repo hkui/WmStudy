@@ -10,8 +10,7 @@ use Workerman\Worker;
 require_once   './../Workerman/Autoloader.php';
 
 // 创建一个Worker监听2345端口，使用http协议通讯
-$http_worker = new Worker("http://0.0.0.0:8080");
-
+$http_worker = new Worker("http://0.0.0.0:80");
 
 $http_worker->count = 2;
 
