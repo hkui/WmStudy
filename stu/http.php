@@ -29,8 +29,8 @@ $http_worker->onWorkerStart=function($worker){
 // 接收到浏览器发送的数据时回复hello world给浏览器
 $http_worker->onMessage = function($connection, $data)
 {
-    // 向浏览器发送hello world
-    $connection->send('hello world '.date("Y-m-d H:i:s"));
+
+    $connection->send('hello world <pre>'.date("Y-m-d H:i:s").print_r($data,1)."<pre>");
 };
 
 Worker::runAll();
