@@ -10,10 +10,10 @@ use Workerman\Worker;
 require_once   './../Workerman/Autoloader.php';
 
 // 创建一个Worker监听2345端口，使用http协议通讯
-$http_worker = new Worker("tcp://0.0.0.0:8081");
+$http_worker = new Worker("tcp://0.0.0.0:8080");
 
 // 启动4个进程对外提供服务
-$http_worker->count = 5;
+$http_worker->count =1;
 
 $http_worker->onConnect = function($connection)
 {
@@ -31,7 +31,7 @@ $http_worker->onWorkerStart=function($worker){
 $http_worker->onMessage = function($connection, $data)
 {
     // 向浏览器发送hello world
-    $connection->send('hello  ['.$data.']');
+    $connection->send('['.$data.']');
 };
 
 Worker::runAll();

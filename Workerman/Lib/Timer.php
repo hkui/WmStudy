@@ -129,7 +129,6 @@ class Timer
             \pcntl_alarm(0);
             return;
         }
-
         $time_now = \time();
         foreach (self::$_tasks as $run_time => $task_data) {
             if ($time_now >= $run_time) {

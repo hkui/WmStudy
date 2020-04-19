@@ -12,17 +12,16 @@ use Workerman\Lib\Timer;
 require_once   './../Workerman/Autoloader.php';
 
 $task=new Worker();
-$task->count=1;
+$task->count=2;
 $task->name='hkui';
 
 $task->onWorkerStart=function ($task){
-    // 每2.5秒执行一次
-    $time_interval = 3;
-    Timer::add($time_interval, function()use($task)
-    {
-        $str= posix_getpid()."--".date("H:i:s")."\n";
-        file_put_contents("./timer.log",$str,FILE_APPEND);
-    },false);
+//    $time_interval = 3;
+//    Timer::add($time_interval, function()use($task)
+//    {
+//        $str= posix_getpid()."--".date("H:i:s")."\n";
+//        file_put_contents("./timer.log",$str,FILE_APPEND);
+//    },false);
 
 
 };
@@ -30,5 +29,6 @@ $task->onWorkerReload=function($task){
     $str= posix_getpid()."--###RELOAD####".PHP_EOL;
     file_put_contents("./timer.log",$str,FILE_APPEND);
 };
+
 Worker::runAll();
 

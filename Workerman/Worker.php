@@ -69,7 +69,7 @@ class Worker
      *
      * @var int
      */
-    const KILL_WORKER_TIMER_TIME = 2;
+    const KILL_WORKER_TIMER_TIME = 10;
 
     /**
      * Default backlog. Backlog is the maximum length of the queue of pending connections.
@@ -575,6 +575,7 @@ class Worker
 
         $unique_prefix = \str_replace('/', '_', static::$_startFile);
 
+
         // Pid file.
         if (empty(static::$pidFile)) {
             static::$pidFile = __DIR__ . "/../$unique_prefix.pid";
@@ -979,6 +980,7 @@ class Worker
                 }else{
                     $sig = SIGUSR1;
                 }
+                Worker::log(basename(__FILE__).__LINE__);
                 \posix_kill($master_pid, $sig);
                 exit;
             default :
@@ -1141,6 +1143,8 @@ class Worker
      */
     public static function signalHandler($signal)
     {
+        static::log(__LINE__."--".$signal);
+
         switch ($signal) {
             // Stop.
             case SIGINT:
@@ -1628,7 +1632,9 @@ class Worker
                         $worker = static::$_workers[$worker_id];
                         // Exit status.
                         if ($status !== 0) {
-                            static::log("worker[" . $worker->name . ":$pid] exit with status $status");
+                            static::log("worker[" . $worker->name . ":$pid] exit with status $status ");
+                            static::log("worker[" . $worker->name . ":$pid] exit with status $status ".pcntl_wifsignaled($status)."---".pcntl_wtermsig($status));
+
                         }
 
                         // For Statistics.
@@ -1653,6 +1659,7 @@ class Worker
                     // If reloading continue.
                     if (isset(static::$_pidsToRestart[$pid])) {
                         unset(static::$_pidsToRestart[$pid]);
+                        self::log(__LINE__);
                         static::reload();
                     }
                 }
@@ -1767,8 +1774,10 @@ class Worker
             if(!static::$_gracefulStop){
                 Timer::add(static::KILL_WORKER_TIMER_TIME, '\posix_kill', array($one_worker_pid, SIGKILL), false);
             }
+            static::log(__LINE__."  master reload ");
         } // For child processes.
         else {
+            static::log(__LINE__."  child reload ");
             \reset(static::$_workers);
             $worker = \current(static::$_workers);
             // Try to emit onWorkerReload callback.
@@ -1783,10 +1792,12 @@ class Worker
                     exit(250);
                 }
             }
+            static::log(__LINE__." child reload ");
 
             if ($worker->reloadable) {
                 static::stopAll();
             }
+            static::log(__LINE__." child reload ");
         }
     }
 
@@ -1833,6 +1844,7 @@ class Worker
                 if (static::$globalEvent) {
                     static::$globalEvent->destroy();
                 }
+                self::log(__LINE__." exit!");
                 exit(0);
             }
         }
