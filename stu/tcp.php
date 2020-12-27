@@ -31,7 +31,7 @@ $http_worker->onWorkerStart=function($worker){
 $http_worker->onMessage = function($connection, $data)
 {
     // 向浏览器发送hello world
-    $connection->send('['.$data.']');
+    $connection->send('['.$data.']'.date("H:i:s").PHP_EOL);
 };
 
 Worker::runAll();

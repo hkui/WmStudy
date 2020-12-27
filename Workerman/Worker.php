@@ -435,13 +435,7 @@ class Worker
      * @var string
      */
     protected static $_OS = OS_TYPE_LINUX;
-
-    /**
-     * Processes for windows.
-     *
-     * @var array
-     */
-    protected static $_processForWindows = array();
+    
 
     /**
      * Status info of current worker process.
@@ -980,7 +974,7 @@ class Worker
                 }else{
                     $sig = SIGUSR1;
                 }
-                Worker::log(basename(__FILE__).__LINE__);
+                Worker::log("sig=".$sig."-".basename(__FILE__).__LINE__);
                 \posix_kill($master_pid, $sig);
                 exit;
             default :
@@ -1143,7 +1137,7 @@ class Worker
      */
     public static function signalHandler($signal)
     {
-        static::log(__LINE__."--".$signal);
+        static::log("line=".__LINE__." get signal=".$signal);
 
         switch ($signal) {
             // Stop.
@@ -1322,11 +1316,7 @@ class Worker
      */
     protected static function forkWorkers()
     {
-        if (static::$_OS === OS_TYPE_LINUX) {
-            static::forkWorkersForLinux();
-        } else {
-            static::forkWorkersForWindows();
-        }
+        static::forkWorkersForLinux();
     }
 
     /**
@@ -1354,129 +1344,6 @@ class Worker
         }
     }
 
-    /**
-     * Fork some worker processes.
-     *
-     * @return void
-     */
-    protected static function forkWorkersForWindows()
-    {
-        $files = static::getStartFilesForWindows();
-        global $argv;
-        if(\in_array('-q', $argv) || \count($files) === 1)
-        {
-            if(\count(static::$_workers) > 1)
-            {
-                static::safeEcho("@@@ Error: multi workers init in one php file are not support @@@\r\n");
-                static::safeEcho("@@@ See http://doc.workerman.net/faq/multi-woker-for-windows.html @@@\r\n");
-            }
-            elseif(\count(static::$_workers) <= 0)
-            {
-                exit("@@@no worker inited@@@\r\n\r\n");
-            }
-
-            \reset(static::$_workers);
-            /** @var Worker $worker */
-            $worker = current(static::$_workers);
-
-            // Display UI.
-            static::safeEcho(\str_pad($worker->name, 21) . \str_pad($worker->getSocketName(), 36) . \str_pad($worker->count, 10) . "[ok]\n");
-            $worker->listen();
-            $worker->run();
-            exit("@@@child exit@@@\r\n");
-        }
-        else
-        {
-            static::$globalEvent = new \Workerman\Events\Select();
-            Timer::init(static::$globalEvent);
-            foreach($files as $start_file)
-            {
-                static::forkOneWorkerForWindows($start_file);
-            }
-        }
-    }
-
-    /**
-     * Get start files for windows.
-     *
-     * @return array
-     */
-    public static function getStartFilesForWindows() {
-        global $argv;
-        $files = array();
-        foreach($argv as $file)
-        {
-            if(\is_file($file))
-            {
-                $files[$file] = $file;
-            }
-        }
-        return $files;
-    }
-
-    /**
-     * Fork one worker process.
-     *
-     * @param string $start_file
-     */
-    public static function forkOneWorkerForWindows($start_file)
-    {
-        $start_file = \realpath($start_file);
-        $std_file = \sys_get_temp_dir() . '/'.\str_replace(array('/', "\\", ':'), '_', $start_file).'.out.txt';
-
-        $descriptorspec = array(
-            0 => array('pipe', 'a'), // stdin
-            1 => array('file', $std_file, 'w'), // stdout
-            2 => array('file', $std_file, 'w') // stderr
-        );
-
-
-        $pipes       = array();
-        $process     = \proc_open("php \"$start_file\" -q", $descriptorspec, $pipes);
-        $std_handler = \fopen($std_file, 'a+');
-        \stream_set_blocking($std_handler, false);
-
-        if (empty(static::$globalEvent)) {
-            static::$globalEvent = new Select();
-            Timer::init(static::$globalEvent);
-        }
-        $timer_id = Timer::add(0.1, function()use($std_handler)
-        {
-            Worker::safeEcho(\fread($std_handler, 65535));
-        });
-
-        // 保存子进程句柄
-        static::$_processForWindows[$start_file] = array($process, $start_file, $timer_id);
-    }
-
-    /**
-     * check worker status for windows.
-     * @return void
-     */
-    public static function checkWorkerStatusForWindows()
-    {
-        foreach(static::$_processForWindows as $process_data)
-        {
-            $process = $process_data[0];
-            $start_file = $process_data[1];
-            $timer_id = $process_data[2];
-            $status = \proc_get_status($process);
-            if(isset($status['running']))
-            {
-                if(!$status['running'])
-                {
-                    static::safeEcho("process $start_file terminated and try to restart\n");
-                    Timer::del($timer_id);
-                    \proc_close($process);
-                    static::forkOneWorkerForWindows($start_file);
-                }
-            }
-            else
-            {
-                static::safeEcho("proc_get_status fail\n");
-            }
-        }
-    }
 
 
     /**
@@ -1601,11 +1468,7 @@ class Worker
      */
     protected static function monitorWorkers()
     {
-        if (static::$_OS === OS_TYPE_LINUX) {
-            static::monitorWorkersForLinux();
-        } else {
-            static::monitorWorkersForWindows();
-        }
+        static::monitorWorkersForLinux();
     }
 
     /**
@@ -1672,17 +1535,7 @@ class Worker
         }
     }
 
-    /**
-     * Monitor all child processes.
-     *
-     * @return void
-     */
-    protected static function monitorWorkersForWindows()
-    {
-        Timer::add(1, "\\Workerman\\Worker::checkWorkerStatusForWindows");
 
-        static::$globalEvent->loop();
-    }
 
     /**
      * Exit current process.
@@ -1774,10 +1627,10 @@ class Worker
             if(!static::$_gracefulStop){
                 Timer::add(static::KILL_WORKER_TIMER_TIME, '\posix_kill', array($one_worker_pid, SIGKILL), false);
             }
-            static::log(__LINE__."  master reload ");
+            static::log("line=".__LINE__."  master reload ".var_export(static::$_gracefulStop,1));
         } // For child processes.
         else {
-            static::log(__LINE__."  child reload ");
+            static::log("line=".__LINE__." worker reload");
             \reset(static::$_workers);
             $worker = \current(static::$_workers);
             // Try to emit onWorkerReload callback.
@@ -1792,12 +1645,9 @@ class Worker
                     exit(250);
                 }
             }
-            static::log(__LINE__." child reload ");
-
             if ($worker->reloadable) {
                 static::stopAll();
             }
-            static::log(__LINE__." child reload ");
         }
     }
 
@@ -1844,7 +1694,6 @@ class Worker
                 if (static::$globalEvent) {
                     static::$globalEvent->destroy();
                 }
-                self::log(__LINE__." exit!");
                 exit(0);
             }
         }

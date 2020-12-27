@@ -574,7 +574,6 @@ class TcpConnection extends ConnectionInterface
      */
     public function baseRead($socket, $check_eof = true)
     {
-        Worker::log(basename(__FILE__).__LINE__);
         // SSL handshake.
         if ($this->transport === 'ssl' && $this->_sslHandshakeCompleted !== true) {
             if ($this->doSslHandshake($socket)) {
@@ -652,7 +651,7 @@ class TcpConnection extends ConnectionInterface
                 if (!$this->onMessage) {
                     continue;
                 }
-                Worker::log(basename(__FILE__).__LINE__);
+                #Worker::log(basename(__FILE__).__LINE__);
                 try {
                     // Decode request buffer before Emitting onMessage callback.
                     \call_user_func($this->onMessage, $this, $parser::decode($one_request_buffer, $this));
@@ -663,7 +662,7 @@ class TcpConnection extends ConnectionInterface
                     Worker::log($e);
                     exit(250);
                 }
-                Worker::log(basename(__FILE__).__LINE__);
+               # Worker::log(basename(__FILE__).__LINE__);
             }
             return;
         }
