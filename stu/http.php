@@ -7,7 +7,9 @@
  */
 
 use Workerman\Worker;
-require_once   './../Workerman/Autoloader.php';
+
+
+require_once   dirname(__DIR__).'/Workerman/Autoloader.php';
 
 // 创建一个Worker监听2345端口，使用http协议通讯
 
@@ -15,7 +17,7 @@ $http_worker = new Worker("http://0.0.0.0:8080");
 
 
 
-$http_worker->count = 1;
+$http_worker->count = 5;
 
 $http_worker->onConnect = function($connection)
 {
@@ -29,10 +31,9 @@ $http_worker->onClose = function($connection)
     //echo "onClose:".PHP_EOL;
 };
 $http_worker->onWorkerStart=function($worker){
-    echo "handler:".print_r(pcntl_signal_get_handler(SIGUSR1),1);
+//    echo "handler:".print_r(pcntl_signal_get_handler(SIGUSR1),1);
 
 };
-
 
 $http_worker->onMessage = function($connection, $data)
 {
