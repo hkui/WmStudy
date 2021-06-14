@@ -16,7 +16,7 @@ class Run
         $str=$start.PHP_EOL;
         for($i=0;$i<$s;$i++){
             $str.=$i.PHP_EOL;
-            sleep(1);
+//            sleep(1);
         }
         $str.=date("H:i:s").PHP_EOL;
         $connection->send($str);

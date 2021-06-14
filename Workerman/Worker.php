@@ -634,9 +634,6 @@ class Worker
      */
     protected static function initWorkers()
     {
-        if (static::$_OS !== OS_TYPE_LINUX) {
-            return;
-        }
         foreach (static::$_workers as $worker) {
             // Worker name.
             if (empty($worker->name)) {
@@ -665,7 +662,6 @@ class Worker
                 $key = '_max' . \ucfirst(\strtolower($column_name)) . 'NameLength';
                 static::$$key = \max(static::$$key, $prop_length);
             }
-
             // Listen.
             if (!$worker->reusePort) {
                 $worker->listen();
@@ -836,9 +832,6 @@ class Worker
      */
     protected static function parseCommand()
     {
-        if (static::$_OS !== OS_TYPE_LINUX) {
-            return;
-        }
         global $argv;
         // Check argv;
         $start_file = $argv[0];
@@ -1075,9 +1068,6 @@ class Worker
      */
     protected static function installSignal()
     {
-        if (static::$_OS !== OS_TYPE_LINUX) {
-            return;
-        }
         // stop
         \pcntl_signal(SIGINT, array('\Workerman\Worker', 'signalHandler'), false);
         // graceful stop
@@ -1101,9 +1091,6 @@ class Worker
      */
     protected static function reinstallSignal()
     {
-        if (static::$_OS !== OS_TYPE_LINUX) {
-            return;
-        }
         // uninstall stop signal handler
         \pcntl_signal(SIGINT, SIG_IGN, false);
         // uninstall graceful stop signal handler
@@ -1238,9 +1225,6 @@ class Worker
      */
     protected static function saveMasterPid()
     {
-        if (static::$_OS !== OS_TYPE_LINUX) {
-            return;
-        }
 
         static::$_masterPid = \posix_getpid();
         if (false === \file_put_contents(static::$pidFile, static::$_masterPid)) {
@@ -2017,14 +2001,12 @@ class Worker
         $this->_autoloadRootPath = \dirname($backtrace[0]['file']);
 
         // Turn reusePort on.
-        if (static::$_OS === OS_TYPE_LINUX  // if linux
-                            && version_compare(PHP_VERSION,'7.0.0', 'ge') // if php >= 7.0.0
-                            && strtolower(php_uname('s')) !== 'darwin') { // if not Mac OS
 
-            $this->reusePort = true;
-        }
+        $this->reusePort = true;
+
 
         // Context for socket.
+
         if ($socket_name) {
             $this->_socketName = $socket_name;
             $this->_localSocket = $this->parseSocketAddress();
@@ -2127,13 +2109,13 @@ class Worker
         if (!isset(static::$_builtinTransports[$scheme])) {
             $scheme         = \ucfirst($scheme);
             $this->protocol = \substr($scheme,0,1)==='\\' ? $scheme : '\\Protocols\\' . $scheme;
+
             if (!\class_exists($this->protocol)) {
                 $this->protocol = "\\Workerman\\Protocols\\$scheme";
                 if (!\class_exists($this->protocol)) {
                     throw new Exception("class \\Protocols\\$scheme not exist");
                 }
             }
-
             if (!isset(static::$_builtinTransports[$this->transport])) {
                 throw new \Exception('Bad worker->transport ' . \var_export($this->transport, true));
             }
