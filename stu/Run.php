@@ -5,10 +5,11 @@
  * Date: 2020/12/27
  * Time: 20:31
  */
-
+date_default_timezone_set("Asia/shanghai");
 class Run
 {
     public static function do($connection, $data){
+
         $start=date("H:i:s");
         $get=$data['get'];
         $s=$get['s']??1;
