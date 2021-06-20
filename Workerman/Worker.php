@@ -1124,7 +1124,7 @@ class Worker
      */
     public static function signalHandler($signal)
     {
-        static::log("line=".__LINE__." get signal=".$signal);
+        static::log("line=".__LINE__." get signal=".$signal." pid=".posix_getpid());
 
         switch ($signal) {
             // Stop.
@@ -1146,6 +1146,7 @@ class Worker
                     static::$_gracefulStop = false;
                 }
                 static::$_pidsToRestart = static::getAllWorkerPids();
+                echo "pidToRestart=".join(",",static::$_pidsToRestart).PHP_EOL;
                 static::reload();
                 break;
             // Show status.
@@ -1472,6 +1473,7 @@ class Worker
             // Calls signal handlers for pending signals again.
             \pcntl_signal_dispatch();
             // If a child has already exited.
+            static::log("wait id={$pid} pid=".posix_getpid());
             if ($pid > 0) {
                 // Find out witch worker process exited.
                 foreach (static::$_pidMap as $worker_id => $worker_pid_array) {
@@ -1506,7 +1508,6 @@ class Worker
                     // If reloading continue.
                     if (isset(static::$_pidsToRestart[$pid])) {
                         unset(static::$_pidsToRestart[$pid]);
-                        self::log(__LINE__);
                         static::reload();
                     }
                 }
@@ -1592,7 +1593,7 @@ class Worker
                     }
                 }
             }
-
+            echo "reloadAble=".join(',',$reloadable_pid_array)." pid=".posix_getpid().PHP_EOL;
             // Get all pids that are waiting reload.
             static::$_pidsToRestart = \array_intersect(static::$_pidsToRestart, $reloadable_pid_array);
 
@@ -1611,10 +1612,10 @@ class Worker
             if(!static::$_gracefulStop){
                 Timer::add(static::KILL_WORKER_TIMER_TIME, '\posix_kill', array($one_worker_pid, SIGKILL), false);
             }
-            static::log("line=".__LINE__."  master reload ".var_export(static::$_gracefulStop,1));
+            static::log("line=".__LINE__."  master reload pid=".posix_getpid());
         } // For child processes.
         else {
-            static::log("line=".__LINE__." worker reload");
+            static::log("line=".__LINE__." worker reload pid=".posix_getpid());
             \reset(static::$_workers);
             $worker = \current(static::$_workers);
             // Try to emit onWorkerReload callback.
