@@ -1,4 +1,6 @@
 <?php
+
+
 //https://segmentfault.com/a/1190000018643894
 
 $splPriorityQueue = new \SplPriorityQueue();
@@ -12,6 +14,8 @@ $splPriorityQueue->insert("task2", 1);
 $splPriorityQueue->insert("task3", 1);
 $splPriorityQueue->insert("task4", 1);
 $splPriorityQueue->insert("task5", 1);
+
+print_r($splPriorityQueue);
 
 echo $splPriorityQueue->extract() . PHP_EOL;
 echo $splPriorityQueue->extract() . PHP_EOL;
