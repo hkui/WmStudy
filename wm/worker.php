@@ -1,6 +1,6 @@
 <?php
 
-class WWorker
+class MyWorker
 {
     public $count = 2;
 
@@ -43,9 +43,9 @@ class WWorker
                 break;
             }
             if ($waitpid) {
-                unset(self::$_workers[$worker->workerId][$waitpid]);
+                unset(self::$_pidMap[$worker->workerId][$waitpid]);
                 echo $waitpid . "    exit !" . PHP_EOL;
-                if (empty(self::$workers)) {
+                if (empty(self::$_workers[$worker->workerId])) {
                     break;
                 }
             } else {
@@ -95,8 +95,8 @@ class WWorker
     }
 }
 
-$w = new WWorker();
+$w = new MyWorker();
 $w->count = 3;
-WWorker::run();
+MyWorker::run();
 
 
