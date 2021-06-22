@@ -1469,7 +1469,7 @@ class Worker
             \pcntl_signal_dispatch();
             // Suspends execution of the current process until a child has exited, or until a signal is delivered
             $status = 0;
-            $pid    = \pcntl_ ($status, WUNTRACED);
+            $pid    = \pcntl_wait($status, WUNTRACED);
             // Calls signal handlers for pending signals again.
             \pcntl_signal_dispatch();
             // If a child has already exited.
