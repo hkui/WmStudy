@@ -100,12 +100,7 @@ class Myworker
      * @param $worker self
      */
     public static function forkOneWorker($worker){
-        echo posix_getpid().PHP_EOL;
-        while(count(static::$_pidMap[$worker->workerId])<$worker->count){
-            $id=static::getId($worker->workerId,0);
-            if($id===false){
-                return; //说明已经满了
-            }
+        while( ($id=static::getId($worker->workerId,0))!==false){
             $pid = pcntl_fork();
             if ($pid < 0){
                 die("fork err!");

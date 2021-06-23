@@ -2,5 +2,5 @@
 include_once  "Myworker.php";
 
 $w = new Myworker();
-$w->count = 2;
+$w->count = 10;
 Myworker::run();
