@@ -41,11 +41,15 @@ class Myworker
 
     public static function run()
     {
-        pcntl_async_signals(true);
-        pcntl_signal(SIGINT, [self::class, 'signalHandler'], false);
+       static::installSignal();
         static::init();
         static::forkWorkers();
         static::wait();
+    }
+    protected static function installSignal() {
+        pcntl_async_signals(true);
+        pcntl_signal(SIGINT, [self::class, 'signalHandler'], false);
+        pcntl_signal(SIGUSR1, [self::class, 'signalHandler'], false);
     }
 
     public static function wait()
@@ -60,8 +64,10 @@ class Myworker
     public static function waitOne($worker){
         while (true) {
             $waitpid = pcntl_wait($status, WUNTRACED);
+            echo "waitPid=".$waitpid.PHP_EOL;
+            //主进程自己被信号打断
             if ($waitpid == -1) {
-                break;
+                continue;
             }
             if ($waitpid>0) {
                 $pid_array=static::$_pidMap[$worker->workerId];
@@ -85,27 +91,26 @@ class Myworker
 
     public static function forkWorkers()
     {
-        foreach (self::$_workers as $worker){
-            while(count(static::$_pidMap[$worker->workerId])<$worker->count){
-                self::forkOne($worker);
-            }
+        foreach (self::$_workers as $worker) {
+            self::forkOneWorker($worker);
         }
-
     }
 
     /**
      * @param $worker self
      */
-    public static function forkOne($worker){
-        $id=static::getId($worker->workerId,0);
-        if($id===false){
-            return; //说明已经满了
-        }
-        for ($i = 0; $i < $worker->count; $i++) {
+    public static function forkOneWorker($worker){
+        echo posix_getpid().PHP_EOL;
+        while(count(static::$_pidMap[$worker->workerId])<$worker->count){
+            $id=static::getId($worker->workerId,0);
+            if($id===false){
+                return; //说明已经满了
+            }
             $pid = pcntl_fork();
             if ($pid < 0){
                 die("fork err!");
             }
+            //parent
             if ($pid > 0) {
                 self::$_pidMap[$worker->workerId][$pid]=$pid;
                 self::$_idMap[$worker->workerId][$id]=$pid;
@@ -123,15 +128,16 @@ class Myworker
     }
     public static function signalHandler($signo)
     {
+        echo posix_getpid()." receive " . $signo . PHP_EOL;
         if ($signo == SIGINT) {
-            echo posix_getpid()." receive " . $signo . PHP_EOL;
             exit();
+        }elseif ($signo==SIGUSR1){
+            print_r(static::$_pidMap);
+            print_r(static::$_idMap);
         }
     }
 }
 
-$w = new Myworker();
-$w->count = 2;
-Myworker::run();
+
 
 
