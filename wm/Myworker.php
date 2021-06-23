@@ -3,6 +3,16 @@
 class Myworker
 {
     public $count = 2;
+    /**
+     * Standard output stream
+     * @var resource
+     */
+    protected static $_outputStream = null;
+    /**
+     * If $outputStream support decorated
+     * @var bool
+     */
+    protected static $_outputDecorated = null;
 
     public static $_workers = [];
     /**
@@ -130,6 +140,52 @@ class Myworker
             print_r(static::$_pidMap);
             print_r(static::$_idMap);
         }
+    }
+    protected static function parseCommand(){
+        global $argv;
+        $start_file = $argv[0];
+        $available_commands = array(
+            'start',
+            'stop',
+            'restart',
+            'reload',
+            'status',
+            'connections',
+        );
+        $usage = "Usage: php yourfile <command> [mode]\nCommands: \nstart\t\tStart worker in DEBUG mode.\n\t\tUse mode -d to start in DAEMON mode.\nstop\t\tStop worker.\n\t\tUse mode -g to stop gracefully.\nrestart\t\tRestart workers.\n\t\tUse mode -d to start in DAEMON mode.\n\t\tUse mode -g to stop gracefully.\nreload\t\tReload codes.\n\t\tUse mode -g to reload gracefully.\nstatus\t\tGet worker status.\n\t\tUse mode -d to show live status.\nconnections\tGet worker connections.\n";
+        if (!isset($argv[1]) || !\in_array($argv[1], $available_commands)) {
+            if (isset($argv[1])) {
+                static::safeEcho('Unknown command: ' . $argv[1] . "\n");
+            }
+            exit($usage);
+        }
+    }
+    public static function safeEcho($msg){
+        $stream = static::outputStream();
+        if (!$stream) {
+            return false;
+        }
+    }
+    /**
+     * @param null $stream
+     * @return bool|resource
+     */
+    private static function outputStream($stream = null)
+    {
+        if (!$stream) {
+            $stream = static::$_outputStream ? static::$_outputStream : STDOUT;
+        }
+        if (!$stream || !\is_resource($stream) || 'stream' !== \get_resource_type($stream)) {
+            return false;
+        }
+        $stat = \fstat($stream);
+        if (($stat['mode'] & 0170000) === 0100000) {
+            // file
+            static::$_outputDecorated = false;
+        } else {
+            static::$_outputDecorated =\function_exists('posix_isatty') && \posix_isatty($stream);
+        }
+        return static::$_outputStream = $stream;
     }
 }
 
