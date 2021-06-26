@@ -30,28 +30,4 @@ phpunit.phar
 /.vagrant
 
 #LEPU project ignore
-*-local.php
-!environments/dev/*/config/*-local.php
-.system.config
-*/config/*.local.ini
-*/config/*_local.ini
-*/runtime/
-*/web/assets/
-common/config/main-local.php
-/environments/prod/
-/runtime
-/seo/sitemap/
-
-/.dockerignore
-/Dockerfile
-/Dockerfile-dev
-/LICENSE.txt
-/README.md
-/Vagrantfile
-/_.gitignore
-#CRM
-*/crm/
-/crm
-vendor/bin/cssmin
-vendor/mrclay/jsmin-php/tests/Resources/minify/actual/.gitkeep
-backend/web/js/plugins/codemirror/mode/tcl/index.html
+*.log
