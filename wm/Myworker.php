@@ -24,12 +24,81 @@ class Myworker
      */
     protected static $_idMap = array();
     public $workerId;
+    protected static $master_pid_file='./master_pid';
+    protected static $daemon;
+
 
     public function __construct()
     {
         $this->workerId                    = \spl_object_hash($this);
         static::$_workers[$this->workerId] = $this;
         static::$_pidMap[$this->workerId]  = [];
+    }
+    public static function runAll(){
+        static::parseCommand();
+    }
+    public static function run()
+    {
+        static::init();
+        static::installSignal();
+        static::daemonize();
+        static::forkWorkers();
+        static::wait();
+    }
+    /**
+     * Run as deamon mode.
+     *
+     * @throws Exception
+     */
+    protected static function daemonize1()
+    {
+        if (!static::$daemonize || static::$_OS !== OS_TYPE_LINUX) {
+            return;
+        }
+        \umask(0);
+        $pid = \pcntl_fork();
+        if (-1 === $pid) {
+            throw new Exception('fork fail');
+        } elseif ($pid > 0) {
+            exit(0);
+        }
+        if (-1 === \posix_setsid()) {
+            throw new Exception("setsid fail");
+        }
+        // Fork again avoid SVR4 system regain the control of terminal.
+        $pid = \pcntl_fork();
+        if (-1 === $pid) {
+            throw new Exception("fork fail");
+        } elseif (0 !== $pid) {
+            exit(0);
+        }
+    }
+    public static function daemonize(){
+        if(!self::$daemon){
+            return ;
+        }
+        umask(0);
+        $pid=pcntl_fork();
+        if($pid<0){
+            throw  new  \Exception("fork err");
+        }
+        //parent
+        if($pid>0){
+            exit();
+        }
+        //son
+        if(posix_setsid()<0){
+            throw  new  \Exception("setsid err");
+        }
+        $pid= pcntl_fork();
+        if($pid<0){
+            throw  new  \Exception("fork err");
+        }
+        //parent 推出
+        if($pid>0){
+            exit();
+        }
+
     }
     protected static function init(){
         static::initId();
@@ -49,13 +118,7 @@ class Myworker
         return array_search($pid,static::$_idMap[$workerid]);
     }
 
-    public static function run()
-    {
-       static::installSignal();
-        static::init();
-        static::forkWorkers();
-        static::wait();
-    }
+
     protected static function installSignal() {
         pcntl_async_signals(true);
         pcntl_signal(SIGINT, [self::class, 'signalHandler'], false);
@@ -159,6 +222,37 @@ class Myworker
             }
             exit($usage);
         }
+        $cmd=trim($argv[1]);
+        $cmd1=isset($argv[2])?$argv[2]:'';
+        switch ($cmd){
+            case 'start':{
+                $master_pid=static::getMasterPid();
+                if($master_pid && static::processIsAlive($master_pid)){
+                    exit("master_pid=".$master_pid." is already runing");
+                }
+                if($cmd1=='-d'){
+                    static::$daemon=true;
+                }
+                static::run();
+            }
+            case 'reload':{
+
+            }
+
+        }
+
+    }
+    public static function getMasterPid(){
+        if(is_file(static::$master_pid_file) && file_exists(static::$master_pid_file)){
+            $master_pid=intval(file_get_contents(static::$master_pid_file));
+            if($master_pid){
+                return $master_pid;
+            }
+        }
+        return false;
+    }
+    public static function processIsAlive($pid){
+        return posix_kill($pid,0);
     }
     public static function safeEcho($msg){
         $stream = static::outputStream();
