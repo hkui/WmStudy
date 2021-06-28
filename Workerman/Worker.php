@@ -1646,7 +1646,7 @@ class Worker
         static::$_status = static::STATUS_SHUTDOWN;
         // For master process.
         if (static::$_masterPid === \posix_getpid()) {
-            static::log("Workerman[" . \basename(static::$_startFile) . "] stopping ...");
+            static::log(__LINE__." Workerman[" . \basename(static::$_startFile) . "] stopping ...");
             $worker_pid_array = static::getAllWorkerPids();
             // Send stop signal to all child processes.
             if (static::$_gracefulStop) {

@@ -17,7 +17,7 @@ $http_worker = new Worker("http://0.0.0.0:8080");
 
 
 
-$http_worker->count = 5;
+$http_worker->count = 3;
 
 $http_worker->onConnect = function($connection)
 {
