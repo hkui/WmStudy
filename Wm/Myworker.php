@@ -5,6 +5,7 @@ require_once __DIR__ . '/Lib/Constants.php';
 
 use Wm\Connection\ConnectionInterface;
 use Wm\Lib\Timer;
+use Wm\Events\EventInterface;
 
 use Exception;
 
@@ -189,12 +190,60 @@ class Myworker
      * @var int
      */
     const KILL_WORKER_TIMER_TIME = 2;
+    /**
+     * EventLoopClass
+     *
+     * @var string
+     */
+    public static $eventLoopClass = '';
+
+    /**
+     * Available event loops.
+     *
+     * @var array
+     */
+    protected static $_availableEventLoops = array(
+        'libevent' => '\Wm\Events\Libevent',
+        'event'    => '\Wm\Events\Event'
+        // Temporarily removed swoole because it is not stable enough
+        //'swoole'   => '\Workerman\Events\Swoole'
+    );
+    /**
+     * Root path for autoload.
+     *
+     * @var string
+     */
+    protected $_autoloadRootPath = '';
+    /**
+     * PHP built-in error types.
+     *
+     * @var array
+     */
+    protected static $_errorType = array(
+        E_ERROR             => 'E_ERROR',             // 1
+        E_WARNING           => 'E_WARNING',           // 2
+        E_PARSE             => 'E_PARSE',             // 4
+        E_NOTICE            => 'E_NOTICE',            // 8
+        E_CORE_ERROR        => 'E_CORE_ERROR',        // 16
+        E_CORE_WARNING      => 'E_CORE_WARNING',      // 32
+        E_COMPILE_ERROR     => 'E_COMPILE_ERROR',     // 64
+        E_COMPILE_WARNING   => 'E_COMPILE_WARNING',   // 128
+        E_USER_ERROR        => 'E_USER_ERROR',        // 256
+        E_USER_WARNING      => 'E_USER_WARNING',      // 512
+        E_USER_NOTICE       => 'E_USER_NOTICE',       // 1024
+        E_STRICT            => 'E_STRICT',            // 2048
+        E_RECOVERABLE_ERROR => 'E_RECOVERABLE_ERROR', // 4096
+        E_DEPRECATED        => 'E_DEPRECATED',        // 8192
+        E_USER_DEPRECATED   => 'E_USER_DEPRECATED'   // 16384
+    );
 
     public function __construct()
     {
         $this->workerId                    = \spl_object_hash($this);
         static::$_workers[$this->workerId] = $this;
         static::$_pidMap[$this->workerId]  = [];
+        $backtrace                = \debug_backtrace();
+        $this->_autoloadRootPath = \dirname($backtrace[0]['file']);
     }
 
     public static function runAll()
@@ -331,8 +380,6 @@ class Myworker
     protected static function getId($workerid,$pid){
         return array_search($pid,static::$_idMap[$workerid]);
     }
-
-
     protected static function installSignal() {
         pcntl_async_signals(true);
         // stop
@@ -412,7 +459,7 @@ class Myworker
             }
         }
         @\unlink(static::$pidFile);
-        static::log("Workerman[" . \basename(static::$_startFile) . "] has been stopped");
+        static::log("Wm[" . \basename(static::$_startFile) . "] has been stopped");
         if (static::$onMasterStop) {
             \call_user_func(static::$onMasterStop);
         }
@@ -448,17 +495,203 @@ class Myworker
                 self::$_pidMap[$worker->workerId][$pid]=$pid;
                 self::$_idMap[$worker->workerId][$id]=$pid;
             } else {
-                static::resetStd();
-                //son
-                $i = 0;
-                while (1) {
-                    echo $i . "--" . posix_getpid() . PHP_EOL;
-                    sleep(3);
-                    $i++;
-                }
-                exit();
+                $worker->run();
             }
         }
+    }
+    /**
+     * Run worker instance.
+     *
+     * @return void
+     */
+    public function run()
+    {
+        //Update process state.
+        static::$_status = static::STATUS_RUNNING;
+
+        // Register shutdown function for checking errors.
+        \register_shutdown_function(array("\\Wm\\Myworker", 'checkErrors'));
+
+        // Set autoload root path.
+        Autoloader::setRootPath($this->_autoloadRootPath);
+
+        $i = 0;
+        while (1) {
+            echo $i . "--" . posix_getpid() . PHP_EOL;
+            sleep(3);
+            $i++;
+        }
+        exit();
+
+        // Create a global event loop.
+        if (!static::$globalEvent) {
+            $event_loop_class = static::getEventLoopName();
+            static::$globalEvent = new $event_loop_class;
+            $this->resumeAccept();
+        }
+
+        // Reinstall signal.
+        static::reinstallSignal();
+
+        // Init Timer.
+        Timer::init(static::$globalEvent);
+
+        // Set an empty onMessage callback.
+        if (empty($this->onMessage)) {
+            $this->onMessage = function () {};
+        }
+
+        \restore_error_handler();
+
+        // Try to emit onWorkerStart callback.
+        if ($this->onWorkerStart) {
+            try {
+                \call_user_func($this->onWorkerStart, $this);
+            } catch (\Exception $e) {
+                static::log($e);
+                // Avoid rapid infinite loop exit.
+                sleep(1);
+                exit(250);
+            } catch (\Error $e) {
+                static::log($e);
+                // Avoid rapid infinite loop exit.
+                sleep(1);
+                exit(250);
+            }
+        }
+
+        // Main loop.
+        static::$globalEvent->loop();
+    }
+    /**
+     * Reinstall signal handler.
+     *
+     * @return void
+     */
+    protected static function reinstallSignal()
+    {
+        // uninstall stop signal handler
+        \pcntl_signal(SIGINT, SIG_IGN, false);
+        // uninstall graceful stop signal handler
+        \pcntl_signal(SIGTERM, SIG_IGN, false);
+        // uninstall reload signal handler
+        \pcntl_signal(SIGUSR1, SIG_IGN, false);
+        // uninstall graceful reload signal handler
+        \pcntl_signal(SIGQUIT, SIG_IGN, false);
+        // uninstall status signal handler
+        \pcntl_signal(SIGUSR2, SIG_IGN, false);
+        // uninstall connections status signal handler
+        \pcntl_signal(SIGIO, SIG_IGN, false);
+        // reinstall stop signal handler
+        static::$globalEvent->add(SIGINT, EventInterface::EV_SIGNAL, array('\Wm\Myworker', 'signalHandler'));
+        // reinstall graceful stop signal handler
+        static::$globalEvent->add(SIGTERM, EventInterface::EV_SIGNAL, array('\Wm\Myworker', 'signalHandler'));
+        // reinstall reload signal handler
+        static::$globalEvent->add(SIGUSR1, EventInterface::EV_SIGNAL, array('\Wm\Myworker', 'signalHandler'));
+        // reinstall graceful reload signal handler
+        static::$globalEvent->add(SIGQUIT, EventInterface::EV_SIGNAL, array('\Wm\Myworker', 'signalHandler'));
+        // reinstall status signal handler
+        static::$globalEvent->add(SIGUSR2, EventInterface::EV_SIGNAL, array('\Wm\Myworker', 'signalHandler'));
+        // reinstall connection status signal handler
+        static::$globalEvent->add(SIGIO, EventInterface::EV_SIGNAL, array('\Wm\Myworker', 'signalHandler'));
+    }
+    /**
+     * Resume accept new connections.
+     *
+     * @return void
+     */
+    public function resumeAccept()
+    {
+        return ;
+        // Register a listener to be notified when server socket is ready to read.
+        if (static::$globalEvent && true === $this->_pauseAccept && $this->_mainSocket) {
+            if ($this->transport !== 'udp') {
+                static::$globalEvent->add($this->_mainSocket, EventInterface::EV_READ, array($this, 'acceptConnection'));
+            } else {
+                static::$globalEvent->add($this->_mainSocket, EventInterface::EV_READ, array($this, 'acceptUdpConnection'));
+            }
+            $this->_pauseAccept = false;
+        }
+    }
+    /**
+     * Get event loop name.
+     *
+     * @return string
+     */
+    protected static function getEventLoopName()
+    {
+        if (static::$eventLoopClass) {
+            return static::$eventLoopClass;
+        }
+
+        if (!\class_exists('\Swoole\Event', false)) {
+            unset(static::$_availableEventLoops['swoole']);
+        }
+
+        $loop_name = '';
+        foreach (static::$_availableEventLoops as $name=>$class) {
+            if (\extension_loaded($name)) {
+                $loop_name = $name;
+                break;
+            }
+        }
+
+        if ($loop_name) {
+            if (\interface_exists('\React\EventLoop\LoopInterface')) {
+                switch ($loop_name) {
+                    case 'libevent':
+                        static::$eventLoopClass = '\Wm\Events\React\ExtLibEventLoop';
+                        break;
+                    case 'event':
+                        static::$eventLoopClass = '\Wm\Events\React\ExtEventLoop';
+                        break;
+                    default :
+                        static::$eventLoopClass = '\Wm\Events\React\StreamSelectLoop';
+                        break;
+                }
+            } else {
+                static::$eventLoopClass = static::$_availableEventLoops[$loop_name];
+            }
+        } else {
+            static::$eventLoopClass = \interface_exists('\React\EventLoop\LoopInterface') ? '\Wm\Events\React\StreamSelectLoop' : '\Wm\Events\Select';
+        }
+        return static::$eventLoopClass;
+    }
+
+    /**
+     * Check errors when current process exited.
+     *
+     * @return void
+     */
+    public static function checkErrors()
+    {
+        if (static::STATUS_SHUTDOWN !== static::$_status) {
+            $error_msg = 'Worker['. \posix_getpid() .'] process terminated' ;
+            $errors    = error_get_last();
+            if ($errors && ($errors['type'] === E_ERROR ||
+                    $errors['type'] === E_PARSE ||
+                    $errors['type'] === E_CORE_ERROR ||
+                    $errors['type'] === E_COMPILE_ERROR ||
+                    $errors['type'] === E_RECOVERABLE_ERROR)
+            ) {
+                $error_msg .= ' with ERROR: ' . static::getErrorType($errors['type']) . " \"{$errors['message']} in {$errors['file']} on line {$errors['line']}\"";
+            }
+            static::log($error_msg);
+        }
+    }
+    /**
+     * Get error message by error code.
+     *
+     * @param integer $type
+     * @return string
+     */
+    protected static function getErrorType($type)
+    {
+        if(isset(self::$_errorType[$type])) {
+            return self::$_errorType[$type];
+        }
+
+        return '';
     }
     public static function signalHandler($signal)
     {
@@ -478,11 +711,7 @@ class Myworker
             // Reload.
             case SIGQUIT:
             case SIGUSR1:
-                if($signal === SIGQUIT){
-                    static::$_gracefulStop = true;
-                }else{
-                    static::$_gracefulStop = false;
-                }
+                static::$_gracefulStop=$signal === SIGQUIT?true:false;
                 static::$_pidsToRestart = static::getAllWorkerPids();
                 echo "pidToRestart=".join(",",static::$_pidsToRestart).PHP_EOL;
                 static::reload();
@@ -508,7 +737,7 @@ class Myworker
         if (static::$_masterPid === \posix_getpid()) {
             // Set reloading state.
             if (static::$_status !== static::STATUS_RELOADING && static::$_status !== static::STATUS_SHUTDOWN) {
-                static::log("Workerman[" . \basename(static::$_startFile) . "] reloading");
+                static::log("Wm[" . \basename(static::$_startFile) . "] reloading");
                 static::$_status = static::STATUS_RELOADING;
                 // Try to emit onMasterReload callback.
                 if (static::$onMasterReload) {
@@ -566,8 +795,8 @@ class Myworker
                 \Wm\Lib\Timer::add(static::KILL_WORKER_TIMER_TIME, '\posix_kill', array($one_worker_pid, SIGKILL), false);
             }
             static::log("line=".__LINE__."  master reload pid=".posix_getpid());
-        } // For child processes.
-        else {
+        }else {
+            // For child processes.
             static::log("line=".__LINE__." worker reload pid=".posix_getpid());
             \reset(static::$_workers);
             $worker = \current(static::$_workers);
@@ -617,6 +846,7 @@ class Myworker
                     $worker->stopping = true;
                 }
             }
+            //不是优雅的退出的
             if (!static::$_gracefulStop || ConnectionInterface::$statistics['connection_count'] <= 0) {
                 static::$_workers = array();
                 if (static::$globalEvent) {

@@ -11,9 +11,9 @@
  * @link      http://www.workerman.net/
  * @license   http://www.opensource.org/licenses/mit-license.php MIT License
  */
-namespace Workerman\Events;
+namespace Wm\Events;
 
-use Workerman\Worker;
+use Wm\Myworker as Worker;
 
 /**
  * libevent eventloop
