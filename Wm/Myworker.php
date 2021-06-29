@@ -91,6 +91,18 @@ class Myworker
      * @var callable
      */
     public static $onMasterReload = null;
+    /**
+     * Emitted when the master process terminated.
+     *
+     * @var callable
+     */
+    public static $onMasterStop = null;
+    /**
+     * Socket name. The format is like this http://0.0.0.0:80 .
+     *
+     * @var string
+     */
+    protected $_socketName = '';
 
     /**
      * Is worker stopping ?
@@ -275,13 +287,11 @@ class Myworker
             \touch($log_file);
             \chmod($log_file, 0622);
         }
-
         // State.
         static::$_status = static::STATUS_STARTING;
 
-
         // Process title.
-        static::setProcessTitle('WorkerMan: master process  start_file=' . static::$_startFile);
+        static::setProcessTitle('Wm: master process  start_file=' . static::$_startFile);
 
         // Init data for worker id.
         static::initId();
@@ -344,6 +354,7 @@ class Myworker
 
     public static function wait()
     {
+        static::$_status = static::STATUS_RUNNING;
         foreach (self::$_workers as $worker){
             self::waitOne($worker);
         }
@@ -379,12 +390,43 @@ class Myworker
                     }
                 }
 
-            } else {
-                echo $pid . PHP_EOL;
+            }
+            // If shutdown state and all child processes exited then master process exit.
+            if (static::$_status === static::STATUS_SHUTDOWN && !static::getAllWorkerPids()) {
+                static::exitAndClearAll();
             }
         }
     }
-
+    /**
+     * Exit current process.
+     *
+     * @return void
+     */
+    protected static function exitAndClearAll()
+    {
+        foreach (static::$_workers as $worker) {
+            $socket_name = $worker->getSocketName();
+            if ($worker->transport === 'unix' && $socket_name) {
+                list(, $address) = \explode(':', $socket_name, 2);
+                @\unlink($address);
+            }
+        }
+        @\unlink(static::$pidFile);
+        static::log("Workerman[" . \basename(static::$_startFile) . "] has been stopped");
+        if (static::$onMasterStop) {
+            \call_user_func(static::$onMasterStop);
+        }
+        exit(0);
+    }
+    /**
+     * Get socket name.
+     *
+     * @return string
+     */
+    public function getSocketName()
+    {
+        return $this->_socketName ? lcfirst($this->_socketName) : 'none';
+    }
     public static function forkWorkers()
     {
         foreach (self::$_workers as $worker) {
@@ -567,20 +609,21 @@ class Myworker
         }else {
             // For child processes.
             // Execute exit.
-            static::log(__LINE__." worker stopping ...");
+            static::log(__LINE__." worker stopping ....");
+
             foreach (static::$_workers as $worker) {
                 if(!$worker->stopping){
                     $worker->stop();
                     $worker->stopping = true;
                 }
             }
-//            if (!static::$_gracefulStop || ConnectionInterface::$statistics['connection_count'] <= 0) {
-//                static::$_workers = array();
-//                if (static::$globalEvent) {
-//                    static::$globalEvent->destroy();
-//                }
-//                exit(0);
-//            }
+            if (!static::$_gracefulStop || ConnectionInterface::$statistics['connection_count'] <= 0) {
+                static::$_workers = array();
+                if (static::$globalEvent) {
+                    static::$globalEvent->destroy();
+                }
+                exit(0);
+            }
         }
     }
     /**
