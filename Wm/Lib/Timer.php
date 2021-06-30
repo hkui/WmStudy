@@ -4,7 +4,7 @@ namespace Wm\Lib;
 
 use Wm\Myworker;
 use Wm\Events\EventInterface;
-use Workerman\Worker;
+use Wm\Myworker as Worker ;
 use Exception;
 
 /**

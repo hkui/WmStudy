@@ -236,6 +236,18 @@ class Myworker
         E_DEPRECATED        => 'E_DEPRECATED',        // 8192
         E_USER_DEPRECATED   => 'E_USER_DEPRECATED'   // 16384
     );
+    /**
+     * reloadable.
+     *
+     * @var bool
+     */
+    public $reloadable = true;
+    /**
+     * Transport layer protocol.
+     *
+     * @var string
+     */
+    public $transport = 'tcp';
 
     public function __construct()
     {
@@ -792,7 +804,7 @@ class Myworker
             \posix_kill($one_worker_pid, $sig);
             // If the process does not exit after static::KILL_WORKER_TIMER_TIME seconds try to kill it.
             if(!static::$_gracefulStop){
-                \Wm\Lib\Timer::add(static::KILL_WORKER_TIMER_TIME, '\posix_kill', array($one_worker_pid, SIGKILL), false);
+                Timer::add(static::KILL_WORKER_TIMER_TIME, '\posix_kill', array($one_worker_pid, SIGKILL), false);
             }
             static::log("line=".__LINE__."  master reload pid=".posix_getpid());
         }else {
@@ -1022,7 +1034,6 @@ class Myworker
                 static::log("sig=".$sig."-".basename(__FILE__).__LINE__);
                 \posix_kill($master_pid, $sig);
                 exit();
-
         }
 
     }
