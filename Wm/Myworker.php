@@ -263,10 +263,13 @@ class Myworker
         static::init();
         static::parseCommand();
         static::installSignal();
-        static::daemonize();
-        static::saveMasterPid();
-        static::forkWorkers();
+        echo __LINE__."pid=".posix_getpid().PHP_EOL;
         static::resetStd();
+        static::daemonize();
+        echo __LINE__."pid=".posix_getpid().PHP_EOL;
+        static::saveMasterPid();
+        echo __LINE__."pid=".posix_getpid().PHP_EOL;
+        static::forkWorkers();
         static::wait();
     }
     public static function daemonize(){
@@ -507,6 +510,9 @@ class Myworker
                 self::$_pidMap[$worker->workerId][$pid]=$pid;
                 self::$_idMap[$worker->workerId][$id]=$pid;
             } else {
+                if (static::$_status === static::STATUS_STARTING) {
+//                    static::resetStd();
+                }
                 $worker->run();
             }
         }
