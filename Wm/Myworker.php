@@ -53,6 +53,12 @@ class Myworker
 
     public $count = 2;
     /**
+     * Name of the worker processes.
+     *
+     * @var string
+     */
+    public $name = 'none';
+    /**
      * Standard output stream
      * @var resource
      */
@@ -62,10 +68,18 @@ class Myworker
      * @var bool
      */
     protected static $_outputDecorated = null;
-
-    public static $_workers = [];
     /**
-     * @var array  [worker_id=>[pid=>pid, pid=>pid, ..], ..]
+     * All worker instances.
+     *
+     * @var Myworker[]
+     */
+    public static $_workers = [];
+
+    /**
+     * All worker processes pid.
+     * The format is like this [worker_id=>[pid=>pid, pid=>pid, ..], ..]
+     *
+     * @var array
      */
     public static $_pidMap=[];
     /**
@@ -270,7 +284,7 @@ class Myworker
         static::saveMasterPid();
         echo __LINE__."pid=".posix_getpid().PHP_EOL;
         static::forkWorkers();
-        static::wait();
+        static::monitorWorkers();
     }
     public static function daemonize(){
         if(!self::$daemonize){
@@ -344,7 +358,7 @@ class Myworker
 
         // Log file.
         if (empty(static::$logFile)) {
-            static::$logFile = __DIR__ . '/../wm.log';
+            static::$logFile = realpath(__DIR__ . '/../wm.log');
         }
         $log_file = (string)static::$logFile;
         if (!\is_file($log_file)) {
@@ -414,41 +428,42 @@ class Myworker
     }
 
 
-    public static function wait()
+    public static function monitorWorkers()
     {
         static::$_status = static::STATUS_RUNNING;
-        foreach (self::$_workers as $worker){
-            self::waitOne($worker);
-        }
-    }
-    /**
-     * @param $worker self
-     */
-    public static function waitOne($worker){
-        while (true) {
+
+        while(true){
+            $status=0;
             $pid = pcntl_wait($status, WUNTRACED);
             echo "waitPid=".$pid.PHP_EOL;
-            //主进程自己被信号打断
-            if ($pid == -1) {
-                continue;
-            }
-            if ($pid>0) {
-                $pid_array=static::$_pidMap[$worker->workerId];
-                if(isset($pid_array[$pid])){
-                    unset(self::$_pidMap[$worker->workerId][$pid]);
-                    $id=static::getId($worker->workerId,$pid);
-                    static::$_idMap[$worker->workerId][$id]=0; //释放出来1个坑位
-                    echo $pid . "    exit !" . PHP_EOL;
-                    if (empty(self::$_workers[$worker->workerId])) {
-                        break;
+            if($pid>0){
+                foreach (static::$_pidMap as  $worker_id=>$worker_pid_array){
+                    if(!isset($worker_pid_array[$pid])){
+                        continue;
                     }
-                    if (static::$_status !== static::STATUS_SHUTDOWN) {
-                        static::forkWorkers();
-                        // If reloading continue.
-                        if (isset(static::$_pidsToRestart[$pid])) {
-                            unset(static::$_pidsToRestart[$pid]);
-                            static::reload();
-                        }
+                    $worker = static::$_workers[$worker_id];
+                    // Exit status.
+                    if ($status !== 0) {
+                        static::log("worker[" . $worker->name . ":$pid] exit with status $status ");
+                        static::log("worker[" . $worker->name . ":$pid] exit with status $status ".pcntl_wifsignaled($status)."---".pcntl_wtermsig($status));
+
+                    }
+                    // Clear process data.
+                    unset(static::$_pidMap[$worker_id][$pid]);
+
+                    // Mark id is available.
+                    $id                              = static::getId($worker_id, $pid);
+                    static::$_idMap[$worker_id][$id] = 0;
+
+                    break;
+                }
+                // Is still running state then fork a new worker process.
+                if (static::$_status !== static::STATUS_SHUTDOWN) {
+                    static::forkWorkers();
+                    // If reloading continue.
+                    if (isset(static::$_pidsToRestart[$pid])) {
+                        unset(static::$_pidsToRestart[$pid]);
+                        static::reload();
                     }
                 }
 
@@ -535,7 +550,7 @@ class Myworker
 
         $i = 0;
         while (1) {
-            echo $i . "--" . posix_getpid() . PHP_EOL;
+            echo "[".date("H:i:s")."]--".$i . "--" . posix_getpid() . PHP_EOL;
             sleep(3);
             $i++;
         }
@@ -713,7 +728,13 @@ class Myworker
     }
     public static function signalHandler($signal)
     {
-        static::log("line=".__LINE__." get signal=".$signal." pid=".posix_getpid());
+        $ismaster=static::$_masterPid==posix_getpid()?true:false;
+        if($ismaster){
+            $str="master";
+        }else{
+            $str='';
+        }
+        static::log("line=".__LINE__."  {$str}  get signal=".$signal." pid=".posix_getpid());
 
         switch ($signal) {
             // Stop.
@@ -851,7 +872,7 @@ class Myworker
                     Timer::add(static::KILL_WORKER_TIMER_TIME, '\posix_kill', array($worker_pid, SIGKILL), false);
                 }
             }
-            Timer::add(1, "\\Wm\\Worker::checkIfChildRunning");
+            Timer::add(1, "\\Wm\\Myworker::checkIfChildRunning");
 
         }else {
             // For child processes.
@@ -871,6 +892,19 @@ class Myworker
                     static::$globalEvent->destroy();
                 }
                 exit(0);
+            }
+        }
+    }
+    /**
+     * check if child processes is really running
+     */
+    public static function checkIfChildRunning()
+    {
+        foreach (static::$_pidMap as $worker_id => $worker_pid_array) {
+            foreach ($worker_pid_array as $pid => $worker_pid) {
+                if (!\posix_kill($pid, 0)) {
+                    unset(static::$_pidMap[$worker_id][$pid]);
+                }
             }
         }
     }
@@ -912,19 +946,7 @@ class Myworker
     public function unlisten() {
 
     }
-    /**
-     * check if child processes is really running
-     */
-    public static function checkIfChildRunning()
-    {
-        foreach (static::$_pidMap as $worker_id => $worker_pid_array) {
-            foreach ($worker_pid_array as $pid => $worker_pid) {
-                if (!\posix_kill($pid, 0)) {
-                    unset(static::$_pidMap[$worker_id][$pid]);
-                }
-            }
-        }
-    }
+
     /**
      * Get all pids of worker processes.
      *
@@ -1017,6 +1039,7 @@ class Myworker
                             static::log("$start_file stop fail");
                             exit;
                         }
+                        static::log("master is  alive");
                         \usleep(10000);
                         continue;
                     }
@@ -1108,7 +1131,6 @@ class Myworker
         }
         return static::$_outputStream = $stream;
     }
-
 }
 
 
