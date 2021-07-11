@@ -9,7 +9,7 @@ use Wm\Events\EventInterface;
 
 use Exception;
 
-class Myworker
+class Myworker extends MyworkerBase
 {
     /**
      * Status starting.
@@ -58,16 +58,7 @@ class Myworker
      * @var string
      */
     public $name = 'none';
-    /**
-     * Standard output stream
-     * @var resource
-     */
-    protected static $_outputStream = null;
-    /**
-     * If $outputStream support decorated
-     * @var bool
-     */
-    protected static $_outputDecorated = null;
+
     /**
      * All worker instances.
      *
@@ -94,10 +85,9 @@ class Myworker
      */
     protected static $_pidsToRestart = array();
     public $workerId;
-    protected static $pidFile='./master_pid';
-    protected static $daemonize;
-    public static $stdoutFile = '/dev/null';
-    public static $logFile = '';
+    public static $pidFile = '';
+
+
     public static $_gracefulStop;
     protected static $_masterPid = 0;
     /**
@@ -228,28 +218,7 @@ class Myworker
      * @var string
      */
     protected $_autoloadRootPath = '';
-    /**
-     * PHP built-in error types.
-     *
-     * @var array
-     */
-    protected static $_errorType = array(
-        E_ERROR             => 'E_ERROR',             // 1
-        E_WARNING           => 'E_WARNING',           // 2
-        E_PARSE             => 'E_PARSE',             // 4
-        E_NOTICE            => 'E_NOTICE',            // 8
-        E_CORE_ERROR        => 'E_CORE_ERROR',        // 16
-        E_CORE_WARNING      => 'E_CORE_WARNING',      // 32
-        E_COMPILE_ERROR     => 'E_COMPILE_ERROR',     // 64
-        E_COMPILE_WARNING   => 'E_COMPILE_WARNING',   // 128
-        E_USER_ERROR        => 'E_USER_ERROR',        // 256
-        E_USER_WARNING      => 'E_USER_WARNING',      // 512
-        E_USER_NOTICE       => 'E_USER_NOTICE',       // 1024
-        E_STRICT            => 'E_STRICT',            // 2048
-        E_RECOVERABLE_ERROR => 'E_RECOVERABLE_ERROR', // 4096
-        E_DEPRECATED        => 'E_DEPRECATED',        // 8192
-        E_USER_DEPRECATED   => 'E_USER_DEPRECATED'   // 16384
-    );
+
     /**
      * reloadable.
      *
@@ -277,12 +246,12 @@ class Myworker
         static::init();
         static::parseCommand();
         static::installSignal();
-        echo __LINE__."pid=".posix_getpid().PHP_EOL;
+        echo __LINE__."  pid=".posix_getpid().PHP_EOL;
         static::resetStd();
         static::daemonize();
-        echo __LINE__."pid=".posix_getpid().PHP_EOL;
+        echo __LINE__." pid=".posix_getpid().PHP_EOL;
         static::saveMasterPid();
-        echo __LINE__."pid=".posix_getpid().PHP_EOL;
+        echo __LINE__." pid=".posix_getpid().PHP_EOL;
         static::forkWorkers();
         static::monitorWorkers();
     }
@@ -295,48 +264,28 @@ class Myworker
         if($pid<0){
             throw  new  \Exception("fork err");
         }
-        //parent 与i出
+        //当前php正在运行的进程
         if($pid>0){
+            echo "【".__LINE__."】 pid=".posix_getpid(). "  exit!  fork son pid=".$pid.PHP_EOL;
             exit();
         }
+        //pid=0
         //son 设置会话组，成为组长
         if(posix_setsid()<0){
             throw  new  \Exception("setsid err");
         }
+        //子进程再次fork,产生子进程，作为之后的master进程
         $pid= pcntl_fork();
         if($pid<0){
             throw  new  \Exception("fork err");
         }
-        //parent 退出
+        //当前的子进程退出
         if($pid>0){
+            echo  "【".__LINE__."】 pid=".posix_getpid(). "  exit!  fork son pid=".$pid.PHP_EOL;
             exit();
         }
     }
-    public static function resetStd()
-    {
-        if (!static::$daemonize) {
-            return;
-        }
-        global $STDOUT, $STDERR;
-        $handle = \fopen(static::$stdoutFile, "a");
-        if ($handle) {
-            unset($handle);
-            \set_error_handler(function(){});
-            \fclose($STDOUT);
-            \fclose($STDERR);
-            \fclose(STDOUT);
-            \fclose(STDERR);
-            $STDOUT = \fopen(static::$stdoutFile, "a");
-            $STDERR = \fopen(static::$stdoutFile, "a");
-            // change output stream
-            static::$_outputStream = null;
-            static::outputStream($STDOUT);
-            \restore_error_handler();
-        } else {
-            throw new Exception('can not open stdoutFile ' . static::$stdoutFile);
-        }
-    }
-   
+
     protected static function init()
     {
         \set_error_handler(function($code, $msg, $file, $line){
@@ -377,24 +326,7 @@ class Myworker
         // Timer init.
         Timer::init();
     }
-    /**
-     * Set process name.
-     *
-     * @param string $title
-     * @return void
-     */
-    protected static function setProcessTitle($title)
-    {
-        \set_error_handler(function(){});
-        // >=php 5.5
-        if (\function_exists('cli_set_process_title')) {
-            \cli_set_process_title($title);
-        } // Need proctitle when php<=5.5 .
-        elseif (\extension_loaded('proctitle') && \function_exists('setproctitle')) {
-            \setproctitle($title);
-        }
-        \restore_error_handler();
-    }
+
     protected static  function initId(){
         foreach (self::$_workers as $worker_id=>$worker){
             $newIdMap=[];
@@ -691,41 +623,8 @@ class Myworker
         return static::$eventLoopClass;
     }
 
-    /**
-     * Check errors when current process exited.
-     *
-     * @return void
-     */
-    public static function checkErrors()
-    {
-        if (static::STATUS_SHUTDOWN !== static::$_status) {
-            $error_msg = 'Worker['. \posix_getpid() .'] process terminated' ;
-            $errors    = error_get_last();
-            if ($errors && ($errors['type'] === E_ERROR ||
-                    $errors['type'] === E_PARSE ||
-                    $errors['type'] === E_CORE_ERROR ||
-                    $errors['type'] === E_COMPILE_ERROR ||
-                    $errors['type'] === E_RECOVERABLE_ERROR)
-            ) {
-                $error_msg .= ' with ERROR: ' . static::getErrorType($errors['type']) . " \"{$errors['message']} in {$errors['file']} on line {$errors['line']}\"";
-            }
-            static::log($error_msg);
-        }
-    }
-    /**
-     * Get error message by error code.
-     *
-     * @param integer $type
-     * @return string
-     */
-    protected static function getErrorType($type)
-    {
-        if(isset(self::$_errorType[$type])) {
-            return self::$_errorType[$type];
-        }
 
-        return '';
-    }
+
     public static function signalHandler($signal)
     {
         $ismaster=static::$_masterPid==posix_getpid()?true:false;
@@ -1060,79 +959,9 @@ class Myworker
                 }else{
                     $sig = SIGUSR1;
                 }
-                static::log("sig=".$sig."-".basename(__FILE__).__LINE__);
+                static::log("sig=".$sig."-".basename(__FILE__)." ".__LINE__);
                 \posix_kill($master_pid, $sig);
                 exit();
         }
-
-    }
-    /**
-     * Log.
-     *
-     * @param string $msg
-     * @return void
-     */
-    public static function log($msg)
-    {
-        $msg = $msg . "\n";
-        if (!static::$daemonize) {
-            static::safeEcho($msg);
-        }
-        $data=\date('Y-m-d H:i:s') . ' ' . 'pid:'.  \posix_getpid() . ' ' . $msg;
-        \file_put_contents((string)static::$logFile,  $data,FILE_APPEND | LOCK_EX);
-    }
-    /**
-     * Safe Echo.
-     * @param string $msg
-     * @param bool   $decorated
-     * @return bool
-     */
-    public static function safeEcho($msg, $decorated = false)
-    {
-        $stream = static::outputStream();
-        if (!$stream) {
-            return false;
-        }
-        if (!$decorated) {
-            $line = $white = $green = $end = '';
-            if (static::$_outputDecorated) {
-                $line = "\033[1A\n\033[K";
-                $white = "\033[47;30m";
-                $green = "\033[32;40m";
-                $end = "\033[0m";
-            }
-            $msg = \str_replace(array('<n>', '<w>', '<g>'), array($line, $white, $green), $msg);
-            $msg = \str_replace(array('</n>', '</w>', '</g>'), $end, $msg);
-        } elseif (!static::$_outputDecorated) {
-            return false;
-        }
-        \fwrite($stream, $msg);
-        \fflush($stream);
-        return true;
-    }
-    /**
-     * @param null $stream
-     * @return bool|resource
-     */
-    private static function outputStream($stream = null)
-    {
-        if (!$stream) {
-            $stream = static::$_outputStream ? static::$_outputStream : STDOUT;
-        }
-        if (!$stream || !\is_resource($stream) || 'stream' !== \get_resource_type($stream)) {
-            return false;
-        }
-        $stat = \fstat($stream);
-        if (($stat['mode'] & 0170000) === 0100000) {
-            // file
-            static::$_outputDecorated = false;
-        } else {
-            static::$_outputDecorated =\function_exists('posix_isatty') && \posix_isatty($stream);
-        }
-        return static::$_outputStream = $stream;
     }
 }
-
-
-
-
