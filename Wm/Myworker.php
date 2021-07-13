@@ -85,11 +85,11 @@ class Myworker extends MyworkerBase
      */
     protected static $_pidsToRestart = array();
     public $workerId;
-    public static $pidFile = '';
+
 
 
     public static $_gracefulStop;
-    protected static $_masterPid = 0;
+
     /**
      * Emitted when the master process get reload signal.
      *
@@ -246,12 +246,9 @@ class Myworker extends MyworkerBase
         static::init();
         static::parseCommand();
         static::installSignal();
-        echo __LINE__."  pid=".posix_getpid().PHP_EOL;
         static::resetStd();
         static::daemonize();
-        echo __LINE__." pid=".posix_getpid().PHP_EOL;
         static::saveMasterPid();
-        echo __LINE__." pid=".posix_getpid().PHP_EOL;
         static::forkWorkers();
         static::monitorWorkers();
     }

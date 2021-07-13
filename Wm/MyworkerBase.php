@@ -16,6 +16,8 @@ class MyworkerBase
     protected static $daemonize;
     public static $stdoutFile = '/dev/null';
     public static $logFile = '';
+    protected static $_masterPid = 0;
+    public static $pidFile = '';
     /**
      * PHP built-in error types.
      *

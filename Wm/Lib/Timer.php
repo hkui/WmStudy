@@ -90,10 +90,9 @@ class Timer
         }
 
         if (!\is_callable($func)) {
-            Myworker::safeEcho(new Exception("not callable"));
+            Worker::safeEcho(new Exception("not callable"));
             return false;
         }
-
         if (empty(self::$_tasks)) {
             \pcntl_alarm(1);
         }
