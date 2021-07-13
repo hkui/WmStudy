@@ -967,7 +967,7 @@ class Worker
                 }else{
                     $sig = SIGUSR1;
                 }
-                Worker::log("sig=".$sig."-".basename(__FILE__).__LINE__);
+                Worker::log("sig=".$sig."-".basename(__FILE__)." ".__LINE__);
                 \posix_kill($master_pid, $sig);
                 exit;
             default :
@@ -1146,7 +1146,7 @@ class Worker
                     static::$_gracefulStop = false;
                 }
                 static::$_pidsToRestart = static::getAllWorkerPids();
-                echo "pidToRestart=".join(",",static::$_pidsToRestart).PHP_EOL;
+                static::log("line=".__LINE__." pidToRestart=[".join(",",static::$_pidsToRestart)."]");
                 static::reload();
                 break;
             // Show status.
@@ -1593,9 +1593,10 @@ class Worker
                     }
                 }
             }
-            echo "reloadAble=".join(',',$reloadable_pid_array)." pid=".posix_getpid().PHP_EOL;
+            static::log("line=".__LINE__." reloadAble=[".join(',',$reloadable_pid_array)."]");
             // Get all pids that are waiting reload.
             static::$_pidsToRestart = \array_intersect(static::$_pidsToRestart, $reloadable_pid_array);
+            static::log("line=".__LINE__." ".print_r(static::$_pidsToRestart,1));
 
             // Reload complete.
             if (empty(static::$_pidsToRestart)) {

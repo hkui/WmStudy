@@ -484,7 +484,6 @@ class Myworker extends MyworkerBase
             $i++;
         }
         exit();
-
         // Create a global event loop.
         if (!static::$globalEvent) {
             $event_loop_class = static::getEventLoopName();
