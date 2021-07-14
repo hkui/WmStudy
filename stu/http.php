@@ -16,7 +16,7 @@ require_once   dirname(__DIR__).'/Workerman/Autoloader.php';
 $http_worker = new Worker("http://0.0.0.0:8080");
 
 
-$http_worker->reloadable=false;
+//$http_worker->reloadable=false;
 $http_worker->count = 3;
 
 $http_worker->onConnect = function($connection)
