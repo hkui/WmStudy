@@ -19,6 +19,85 @@ class MyworkerBase
     protected static $_masterPid = 0;
     public static $pidFile = '';
     /**
+     * Global event loop.
+     *
+     * @var Events\EventInterface
+     */
+    public static $globalEvent = null;
+    /**
+     * After sending the restart command to the child process KILL_WORKER_TIMER_TIME seconds,
+     * if the process is still living then forced to kill.
+     *
+     * @var int
+     */
+    const KILL_WORKER_TIMER_TIME = 2;
+    /**
+     * EventLoopClass
+     *
+     * @var string
+     */
+    public static $eventLoopClass = '';
+    /**
+     * Pause accept new connections or not.
+     *
+     * @var bool
+     */
+    protected $_pauseAccept = true;
+
+    /**
+     * reuse port.
+     *
+     * @var bool
+     */
+    public $reusePort = false;
+
+    /**
+     * Listening socket.
+     *
+     * @var resource
+     */
+    protected $_mainSocket = null;
+
+    /** parse from _socketName avoid parse again in master or worker
+     * LocalSocket The format is like tcp://0.0.0.0:8080
+     * @var string
+     */
+
+    protected $_localSocket=null;
+    /**
+     * Context of socket.
+     *
+     * @var resource
+     */
+    protected $_context = null;
+
+    /**
+     * Unix user of processes, needs appropriate privileges (usually root).
+     *
+     * @var string
+     */
+    public $user = '';
+
+    /**
+     * Unix group of processes, needs appropriate privileges (usually root).
+     *
+     * @var string
+     */
+    public $group = '';
+
+
+    /**
+     * PHP built-in protocols.
+     *
+     * @var array
+     */
+    protected static $_builtinTransports = array(
+        'tcp'   => 'tcp',
+        'udp'   => 'udp',
+        'unix'  => 'unix',
+        'ssl'   => 'tcp'
+    );
+    /**
      * PHP built-in error types.
      *
      * @var array

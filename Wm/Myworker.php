@@ -181,25 +181,7 @@ class Myworker extends MyworkerBase
      * @var array
      */
     public $connections = array();
-    /**
-     * Global event loop.
-     *
-     * @var Events\EventInterface
-     */
-    public static $globalEvent = null;
-    /**
-     * After sending the restart command to the child process KILL_WORKER_TIMER_TIME seconds,
-     * if the process is still living then forced to kill.
-     *
-     * @var int
-     */
-    const KILL_WORKER_TIMER_TIME = 2;
-    /**
-     * EventLoopClass
-     *
-     * @var string
-     */
-    public static $eventLoopClass = '';
+
 
     /**
      * Available event loops.
@@ -209,8 +191,6 @@ class Myworker extends MyworkerBase
     protected static $_availableEventLoops = array(
         'libevent' => '\Wm\Events\Libevent',
         'event'    => '\Wm\Events\Event'
-        // Temporarily removed swoole because it is not stable enough
-        //'swoole'   => '\Workerman\Events\Swoole'
     );
     /**
      * Root path for autoload.
@@ -248,6 +228,7 @@ class Myworker extends MyworkerBase
         static::installSignal();
         static::resetStd();
         static::daemonize();
+        static::initWorkers();
         static::saveMasterPid();
         static::forkWorkers();
         static::monitorWorkers();
@@ -282,6 +263,134 @@ class Myworker extends MyworkerBase
             exit();
         }
     }
+    /**
+     * Init All worker instances.
+     *
+     * @return void
+     */
+    protected static function initWorkers()
+    {
+        foreach (static::$_workers as $worker) {
+            // Worker name.
+            if (empty($worker->name)) {
+                $worker->name = 'none';
+            }
+
+            // Get unix user of the worker process.
+            if (empty($worker->user)) {
+                $worker->user = static::getCurrentUser();
+            } else {
+                if (\posix_getuid() !== 0 && $worker->user !== static::getCurrentUser()) {
+                    static::log('Warning: You must have the root privileges to change uid and gid.');
+                }
+            }
+
+            // Socket name.
+            $worker->socket = $worker->getSocketName();
+
+            // Status name.
+            $worker->status = '<g> [OK] </g>';
+
+            // Get column mapping for UI
+
+            // Listen.
+            if (!$worker->reusePort) {
+                $worker->listen();
+            }
+        }
+    }
+    /**
+     * Listen.
+     *
+     * @throws Exception
+     */
+    public function listen()
+    {
+        if (!$this->_socketName) {
+            return;
+        }
+
+        // Autoload.
+        Autoloader::setRootPath($this->_autoloadRootPath);
+
+        if (!$this->_mainSocket) {
+
+            $local_socket = !empty($this->_localSocket) ? $this->_localSocket : $this->parseSocketAddress();
+
+            // Flag.
+            $flags = $this->transport === 'udp' ? STREAM_SERVER_BIND : STREAM_SERVER_BIND | STREAM_SERVER_LISTEN;
+            $errno = 0;
+            $errmsg = '';
+            // SO_REUSEPORT.
+            if ($this->reusePort) {
+                \stream_context_set_option($this->_context, 'socket', 'so_reuseport', 1);
+            }
+
+            // Create an Internet or Unix domain server socket.
+            $this->_mainSocket = \stream_socket_server($local_socket, $errno, $errmsg, $flags, $this->_context);
+            if (!$this->_mainSocket) {
+                throw new Exception($errmsg);
+            }
+
+            if ($this->transport === 'ssl') {
+                \stream_socket_enable_crypto($this->_mainSocket, false);
+            } elseif ($this->transport === 'unix') {
+                $socket_file = \substr($local_socket, 7);
+                if ($this->user) {
+                    chown($socket_file, $this->user);
+                }
+                if ($this->group) {
+                    chgrp($socket_file, $this->group);
+                }
+            }
+
+            // Try to open keepalive for tcp and disable Nagle algorithm.
+            if (\function_exists('socket_import_stream') && static::$_builtinTransports[$this->transport] === 'tcp') {
+                \set_error_handler(function(){});
+                $socket = \socket_import_stream($this->_mainSocket);
+                \socket_set_option($socket, SOL_SOCKET, SO_KEEPALIVE, 1);
+                \socket_set_option($socket, SOL_TCP, TCP_NODELAY, 1);
+                \restore_error_handler();
+            }
+
+            // Non blocking.
+            \stream_set_blocking($this->_mainSocket, false);
+        }
+
+        $this->resumeAccept();
+    }
+    /**
+     * Parse local socket address.
+     *
+     * @throws Exception
+     */
+    protected function parseSocketAddress() {
+        if (!$this->_socketName) {
+            return;
+        }
+        // Get the application layer communication protocol and listening address.
+        list($scheme, $address) = \explode(':', $this->_socketName, 2);
+        // Check application layer protocol class.
+        if (!isset(static::$_builtinTransports[$scheme])) {
+            $scheme         = \ucfirst($scheme);
+            $this->protocol = \substr($scheme,0,1)==='\\' ? $scheme : '\\Protocols\\' . $scheme;
+
+            if (!\class_exists($this->protocol)) {
+                $this->protocol = "\\Workerman\\Protocols\\$scheme";
+                if (!\class_exists($this->protocol)) {
+                    throw new Exception("class \\Protocols\\$scheme not exist");
+                }
+            }
+            if (!isset(static::$_builtinTransports[$this->transport])) {
+                throw new \Exception('Bad worker->transport ' . \var_export($this->transport, true));
+            }
+        } else {
+            $this->transport = $scheme;
+        }
+        //local socket
+        return static::$_builtinTransports[$this->transport] . ":" . $address;
+    }
+
 
     protected static function init()
     {
@@ -477,13 +586,6 @@ class Myworker extends MyworkerBase
         // Set autoload root path.
         Autoloader::setRootPath($this->_autoloadRootPath);
 
-        $i = 0;
-        while (1) {
-            echo "[".date("H:i:s")."]--".$i . "--" . posix_getpid() . PHP_EOL;
-            sleep(3);
-            $i++;
-        }
-        exit();
         // Create a global event loop.
         if (!static::$globalEvent) {
             $event_loop_class = static::getEventLoopName();
@@ -563,7 +665,6 @@ class Myworker extends MyworkerBase
      */
     public function resumeAccept()
     {
-        return ;
         // Register a listener to be notified when server socket is ready to read.
         if (static::$globalEvent && true === $this->_pauseAccept && $this->_mainSocket) {
             if ($this->transport !== 'udp') {
@@ -839,7 +940,25 @@ class Myworker extends MyworkerBase
      * @return void
      */
     public function unlisten() {
-
+        $this->pauseAccept();
+        if ($this->_mainSocket) {
+            \set_error_handler(function(){});
+            \fclose($this->_mainSocket);
+            \restore_error_handler();
+            $this->_mainSocket = null;
+        }
+    }
+    /**
+     * Pause accept new connections.
+     *
+     * @return void
+     */
+    public function pauseAccept()
+    {
+        if (static::$globalEvent && false === $this->_pauseAccept && $this->_mainSocket) {
+            static::$globalEvent->del($this->_mainSocket, EventInterface::EV_READ);
+            $this->_pauseAccept = true;
+        }
     }
 
     /**
