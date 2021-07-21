@@ -13,7 +13,7 @@ class MyworkerBase
      * @var bool
      */
     protected static $_outputDecorated = null;
-    protected static $daemonize;
+    public static $daemonize;
     public static $stdoutFile = '/dev/null';
     public static $logFile = '';
     protected static $_masterPid = 0;
@@ -50,6 +50,13 @@ class MyworkerBase
      * @var bool
      */
     public $reusePort = false;
+
+    /**
+     * Default backlog. Backlog is the maximum length of the queue of pending connections.
+     *
+     * @var int
+     */
+    const DEFAULT_BACKLOG = 102400;
 
     /**
      * Listening socket.

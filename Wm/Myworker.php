@@ -212,13 +212,32 @@ class Myworker extends MyworkerBase
      */
     public $transport = 'tcp';
 
-    public function __construct()
+    /**
+     * Myworker constructor.
+     * @param string $socket_name
+     * @param array $context_option
+     */
+    public function __construct($socket_name = '', array $context_option = [])
     {
         $this->workerId                    = \spl_object_hash($this);
         static::$_workers[$this->workerId] = $this;
         static::$_pidMap[$this->workerId]  = [];
         $backtrace                = \debug_backtrace();
         $this->_autoloadRootPath = \dirname($backtrace[0]['file']);
+        // Turn reusePort on.
+
+        $this->reusePort = true;
+
+        // Context for socket.
+
+        if ($socket_name) {
+            $this->_socketName = $socket_name;
+            $this->_localSocket = $this->parseSocketAddress();
+            if (!isset($context_option['socket']['backlog'])) {
+                $context_option['socket']['backlog'] = static::DEFAULT_BACKLOG;
+            }
+            $this->_context = \stream_context_create($context_option);
+        }
     }
 
     public static function runAll()
@@ -376,7 +395,7 @@ class Myworker extends MyworkerBase
             $this->protocol = \substr($scheme,0,1)==='\\' ? $scheme : '\\Protocols\\' . $scheme;
 
             if (!\class_exists($this->protocol)) {
-                $this->protocol = "\\Workerman\\Protocols\\$scheme";
+                $this->protocol = "\\My\\Protocols\\$scheme";
                 if (!\class_exists($this->protocol)) {
                     throw new Exception("class \\Protocols\\$scheme not exist");
                 }
