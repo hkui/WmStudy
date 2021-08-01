@@ -6,6 +6,9 @@ require_once __DIR__ . '/Lib/Constants.php';
 use Wm\Connection\ConnectionInterface;
 use Wm\Lib\Timer;
 use Wm\Events\EventInterface;
+use Wm\Connection\TcpConnection;
+use Wm\Connection\UdpConnection;
+
 
 use Exception;
 
@@ -182,6 +185,23 @@ class Myworker extends MyworkerBase
      */
     public $connections = array();
 
+    /**
+     * Max udp package size.
+     *
+     * @var int
+     */
+    const MAX_UDP_PACKAGE_SIZE = 65535;
+
+    public $transport = 'tcp';
+
+
+    /**
+     * Application layer protocol.
+     *
+     * @var string
+     */
+    public $protocol = null;
+
 
     /**
      * Available event loops.
@@ -205,12 +225,7 @@ class Myworker extends MyworkerBase
      * @var bool
      */
     public $reloadable = true;
-    /**
-     * Transport layer protocol.
-     *
-     * @var string
-     */
-    public $transport = 'tcp';
+
 
     /**
      * Myworker constructor.
@@ -319,6 +334,16 @@ class Myworker extends MyworkerBase
         }
     }
     /**
+     * Get unix user of current porcess.
+     *
+     * @return string
+     */
+    protected static function getCurrentUser()
+    {
+        $user_info = \posix_getpwuid(\posix_getuid());
+        return $user_info['name'];
+    }
+    /**
      * Listen.
      *
      * @throws Exception
@@ -395,7 +420,7 @@ class Myworker extends MyworkerBase
             $this->protocol = \substr($scheme,0,1)==='\\' ? $scheme : '\\Protocols\\' . $scheme;
 
             if (!\class_exists($this->protocol)) {
-                $this->protocol = "\\My\\Protocols\\$scheme";
+                $this->protocol = "\\Wm\\Protocols\\$scheme";
                 if (!\class_exists($this->protocol)) {
                     throw new Exception("class \\Protocols\\$scheme not exist");
                 }
@@ -693,6 +718,98 @@ class Myworker extends MyworkerBase
             }
             $this->_pauseAccept = false;
         }
+    }
+    /**
+     * Accept a connection.
+     *
+     * @param resource $socket
+     * @return void
+     */
+    public function acceptConnection($socket)
+    {
+        // Accept a connection on server socket.
+        \set_error_handler(function(){});
+        $new_socket = stream_socket_accept($socket, 0, $remote_address);
+        \restore_error_handler();
+
+        // Thundering herd.
+        if (!$new_socket) {
+            return;
+        }
+
+        // TcpConnection.
+        $connection                         = new TcpConnection($new_socket, $remote_address);
+        $this->connections[$connection->id] = $connection;
+        $connection->worker                 = $this;
+        $connection->protocol               = $this->protocol;
+        $connection->transport              = $this->transport;
+        $connection->onMessage              = $this->onMessage;
+        $connection->onClose                = $this->onClose;
+        $connection->onError                = $this->onError;
+        $connection->onBufferDrain          = $this->onBufferDrain;
+        $connection->onBufferFull           = $this->onBufferFull;
+
+        // Try to emit onConnect callback.
+        if ($this->onConnect) {
+            try {
+                \call_user_func($this->onConnect, $connection);
+            } catch (\Exception $e) {
+                static::log($e);
+                exit(250);
+            } catch (\Error $e) {
+                static::log($e);
+                exit(250);
+            }
+        }
+    }
+    public function acceptUdpConnection($socket)
+    {
+        \set_error_handler(function(){});
+        $recv_buffer = \stream_socket_recvfrom($socket, static::MAX_UDP_PACKAGE_SIZE, 0, $remote_address);
+        \restore_error_handler();
+        if (false === $recv_buffer || empty($remote_address)) {
+            return false;
+        }
+        // UdpConnection.
+        $connection           = new UdpConnection($socket, $remote_address);
+        $connection->protocol = $this->protocol;
+        if ($this->onMessage) {
+            try {
+                if ($this->protocol !== null) {
+                    /** @var \Wm\Protocols\ProtocolInterface $parser */
+                    $parser      = $this->protocol;
+                    if(\method_exists($parser,'input')){
+                        while($recv_buffer !== ''){
+                            $len = $parser::input($recv_buffer, $connection);
+                            if($len === 0)
+                                return true;
+                            $package = \substr($recv_buffer,0,$len);
+                            $recv_buffer = \substr($recv_buffer,$len);
+                            $data = $parser::decode($package,$connection);
+                            if ($data === false)
+                                continue;
+                            \call_user_func($this->onMessage, $connection, $data);
+                        }
+                    }else{
+                        $data = $parser::decode($recv_buffer, $connection);
+                        // Discard bad packets.
+                        if ($data === false)
+                            return true;
+                        \call_user_func($this->onMessage, $connection, $data);
+                    }
+                }else{
+                    \call_user_func($this->onMessage, $connection, $recv_buffer);
+                }
+                ConnectionInterface::$statistics['total_request']++;
+            } catch (\Exception $e) {
+                static::log($e);
+                exit(250);
+            } catch (\Error $e) {
+                static::log($e);
+                exit(250);
+            }
+        }
+        return true;
     }
     /**
      * Get event loop name.
